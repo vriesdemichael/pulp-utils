@@ -1,0 +1,10 @@
+#!/bin/bash
+
+killall rq -w 
+echo "RQs killed"
+killall pulp-content -w 
+echo "Pulp content killed"
+killall pulpcore-manager -w
+echo "Pulpcore manager killed"
+echo "Killalls complete"
+

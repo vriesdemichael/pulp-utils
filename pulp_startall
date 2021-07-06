@@ -1,0 +1,54 @@
+#!/bin/bash
+
+export SECURITY_SCAN_SHELL="clamdscan --fdpass --quiet"
+#export SECURITY_SCAN_SHELL="false"
+
+pidof freshclam > /dev/null || sudo service clamav-freshclam start
+pidof redis-server > /dev/null || sudo service redis-server start
+pidof postgres > /dev/null || sudo service postgresql start
+pidof clamd > /dev/null || sudo service clamav-daemon start
+
+
+
+cd /var/lib/pulp/tmp
+
+function handle_interrupt {
+	echo ""
+	echo ""
+	echo "Start everything script was interrupted!";
+	/opt/pulp/bin/pulp_killall
+}
+
+trap handle_interrupt INT
+
+processes=()
+pulp-content &
+processes+=( $! )
+pulpcore-manager runserver 24817 &
+processes+=( $! )
+rq worker -n "resource-manager" -w "pulpcore.tasking.worker.PulpWorker" -c "pulpcore.rqconfig" &
+processes+=( $! )
+n_workers=${1:-1}
+n_workers_range={0..$n_workers}
+echo "Starting $n_workers workers"
+echo "n_workers_range=$n_workers_range"
+for n in $(seq $n_workers)
+do
+	rq worker -n "pulp-worker-$n" -w "pulpcore.tasking.worker.PulpWorker" -c "pulpcore.rqconfig" &
+	echo "Stored in worker $n in $!"
+	processes+=( $! )
+done
+
+
+trap handle_interrupt INT
+sleep 5 
+for p in $processes
+do 
+	echo "Waiting for $p"
+	echo $(ps -p $p)
+	wait $p
+done
+
+echo "All processes exited"
+echo ""
+exit 0
